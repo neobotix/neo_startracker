@@ -15,9 +15,8 @@ int main(int argc, char *argv[])
 	
     while(ros::ok() && ret == 0)
 	{
-        tracker.run();
-		
-		ros::spinOnce();
+            tracker.run();
+            ros::spinOnce();
 	}
 
     tracker.shutdown();

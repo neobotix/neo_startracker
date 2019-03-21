@@ -109,13 +109,28 @@ int StarTracker::run()
 
             //convert angle to quaternion
             tf::Matrix3x3 matrix;
+            tf::Matrix3x3 rot_to_base;
+            tf::Matrix3x3 orientation;
             tf::Quaternion q_tf;
 
             matrix.setEulerYPR(currentPosition_.yaw,currentPosition_.pitch,currentPosition_.roll);
 
-            matrix.getRotation(q_tf);
+            double XOffset = 0.0;
+            double YOffset = 0.0;
+            //apply translation
+            currentPosition_.x -= XOffset;
+            currentPosition_.y -= YOffset;
 
-            //publish Data via ROS-Topic
+            //apply rotation to base_link
+            tfScalar yaw = 0.0;
+            rot_to_base.setEulerYPR(yaw, 0.0, 0.0);
+
+            orientation = matrix * rot_to_base;
+
+            //get quaternion from Euler angles
+            orientation.getRotation(q_tf);
+
+            //create ROS-Msg
             geometry_msgs::PoseStamped startracker_pose;
             startracker_pose.header.frame_id = "map";
             startracker_pose.header.stamp = ros::Time::now();
@@ -127,7 +142,9 @@ int StarTracker::run()
             startracker_pose.pose.orientation.y = q_tf.getY();
             startracker_pose.pose.orientation.z = q_tf.getZ();
 
+            //publish
             pubPoseStamped.publish(startracker_pose);
+
 
         }
         else
