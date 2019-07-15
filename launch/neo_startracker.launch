@@ -1,7 +1,7 @@
 <launch>
 
-    <node pkg="neo_startracker_node" type="neo_startracker_node" name="startracker_node" output="screen">
-        <rosparam file="$(find neo_startracker_node)/launch/neo_startracker.yaml" command="load" />
+    <node pkg="neo_startracker" type="neo_startracker_node" name="startracker_node" output="screen">
+        <rosparam file="$(find neo_startracker)/launch/neo_startracker.yaml" command="load" />
     </node>
 
 </launch>

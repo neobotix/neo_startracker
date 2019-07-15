@@ -6,12 +6,16 @@ StarTracker::StarTracker()
     std::string nameSpace = ros::this_node::getName();
 
     //ros related values
-    poseTopicName_   = nh_.param <std::string>(nameSpace + "/ros_topics/abs_topic", "startracker_pose");
+    poseTopicName_  = nh_.param <std::string>(nameSpace + "/ros_topics/abs_topic", "startracker_pose");
 
-    pubPoseStamped    = nh_.advertise<geometry_msgs::PoseStamped>(poseTopicName_, 1);
+    m_pubTwist = nh_.advertise<geometry_msgs::Twist>("startracker_twist", 1);
 
     port_ = nh_.param(nameSpace + "/device_configuration/port", 18000);
     ROS_INFO("Neo_StartTracker: using UDP Port = %d", port_);
+
+    //set up timer to cyclically call run-method
+    m_timerRun = nh_.createTimer(ros::Duration(0.02), &StarTracker::run, this);
+
 
 }
 
@@ -45,10 +49,14 @@ int StarTracker::init()
     }
 
     ROS_INFO("Neo_StartTracker: initialization successful");
+
+    m_bWorldTransformAvailable = false;
+
+
     return 0;
 }
 
-int StarTracker::run()
+void StarTracker::run(const ros::TimerEvent& e)
 {
 
     unsigned char rcvBuf[MSG_SIZE];
@@ -94,56 +102,43 @@ int StarTracker::run()
             receivedPosition_.roll = getInt32(rcvBuf[21],rcvBuf[22],rcvBuf[23],rcvBuf[24]);
 
             //convert from from 10^5 to 10^3 [mm]
-            currentPosition_.x = receivedPosition_.x / 100000.0;
-            currentPosition_.y = receivedPosition_.y / 100000.0;
-            currentPosition_.z = receivedPosition_.z / 100000.0;
+            currentPosition_.x = round(receivedPosition_.x / 100000.0 * 1000)/1000;
+            currentPosition_.y = round(receivedPosition_.y / 100000.0 * 1000)/1000;
+            currentPosition_.z = round(receivedPosition_.z / 100000.0 * 1000)/1000;
 
             //convert tix to rad
             float r2t = 1e6f / (2.f * M_PI);
 
-            currentPosition_.yaw = receivedPosition_.yaw / r2t;
-            currentPosition_.pitch = receivedPosition_.pitch / r2t;
-            currentPosition_.roll = receivedPosition_.roll / r2t;
+            currentPosition_.yaw = round(receivedPosition_.yaw / r2t * 1000) / 1000;
+            currentPosition_.pitch = round(receivedPosition_.pitch / r2t * 1000) / 1000;
+            currentPosition_.roll = round(receivedPosition_.roll / r2t * 1000) / 1000;
 
             ROS_INFO("Current Position: %f %f %f Current Angle: %f %f %f", currentPosition_.x, currentPosition_.y, currentPosition_.z, currentPosition_.roll, currentPosition_.pitch, currentPosition_.yaw);
 
-            //convert angle to quaternion
-            tf::Matrix3x3 matrix;
-            tf::Matrix3x3 rot_to_base;
-            tf::Matrix3x3 orientation;
-            tf::Quaternion q_tf;
+            
+            //convert angles to angle vel
+            float vel_x = (currentPosition_.x - oldPosition_.x) / 0.01;
+            float vel_y = (currentPosition_.y - oldPosition_.y) / 0.01;
+            float vel_alpha = (currentPosition_.yaw - oldPosition_.yaw) / 0.01;
 
-            matrix.setEulerYPR(currentPosition_.yaw,currentPosition_.pitch,currentPosition_.roll);
+            ROS_INFO("Current Velocities: %f %f %f ", vel_x, vel_y, vel_alpha);
 
-            double XOffset = 0.0;
-            double YOffset = 0.0;
-            //apply translation
-            currentPosition_.x -= XOffset;
-            currentPosition_.y -= YOffset;
+            //save old position
+            oldPosition_.x = currentPosition_.x;
+            oldPosition_.y = currentPosition_.y;
+            oldPosition_.z = currentPosition_.z;
+            oldPosition_.roll = currentPosition_.roll;
+            oldPosition_.pitch = currentPosition_.pitch;
+            oldPosition_.yaw = currentPosition_.yaw;
 
-            //apply rotation to base_link
-            tfScalar yaw = 0.0;
-            rot_to_base.setEulerYPR(yaw, 0.0, 0.0);
+            //create geometry_msgs twist
+            geometry_msgs::Twist msgTwist;
+            msgTwist.linear.x = vel_x;
+            msgTwist.linear.y = vel_y;
+            msgTwist.angular.z = vel_alpha;
 
-            orientation = matrix * rot_to_base;
+            m_pubTwist.publish(msgTwist);
 
-            //get quaternion from Euler angles
-            orientation.getRotation(q_tf);
-
-            //create ROS-Msg
-            geometry_msgs::PoseStamped startracker_pose;
-            startracker_pose.header.frame_id = "map";
-            startracker_pose.header.stamp = ros::Time::now();
-            startracker_pose.pose.position.x = currentPosition_.x;
-            startracker_pose.pose.position.y = currentPosition_.y;
-            startracker_pose.pose.position.z = currentPosition_.z;
-            startracker_pose.pose.orientation.w = q_tf.getW();
-            startracker_pose.pose.orientation.x = q_tf.getX();
-            startracker_pose.pose.orientation.y = q_tf.getY();
-            startracker_pose.pose.orientation.z = q_tf.getZ();
-
-            //publish
-            pubPoseStamped.publish(startracker_pose);
 
 
         }
@@ -155,10 +150,13 @@ int StarTracker::run()
         }
 
     }
-
-    return 0;
 }
 
+/*int StarTracker::callbackOdom()
+{
+    ROS_INFO("Neo_StartTracker: Shutting down Node");
+    close(sock_);
+}*/
 
 int StarTracker::shutdown()
 {

@@ -12,7 +12,7 @@
 
 #UDP-Port
 device_configuration:
-    port: 19000
+    port: 19001
 
 ################################################
 #            frames                            #
@@ -24,7 +24,7 @@ frame_names:
 #            topics                            #
 ################################################
 topics:
-    odom_topic_name: "odom_startracker"
+    odom_topic_name: "startracker_pose"
 
 
 

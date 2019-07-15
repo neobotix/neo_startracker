@@ -13,11 +13,12 @@ int main(int argc, char *argv[])
     ret = tracker.init();
 
 	
-    while(ros::ok() && ret == 0)
-	{
-            tracker.run();
-            ros::spinOnce();
-	}
+    ros::spin();
+    /*while(ros::ok() && ret == 0)
+    {
+        tracker.run();
+        ros::spinOnce();
+    }*/
 
     tracker.shutdown();
 	return 0;

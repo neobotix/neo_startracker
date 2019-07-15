@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package>
-  <name>neo_startracker_node</name>
+  <name>neo_startracker</name>
   <version>0.0.1</version>
   <description>Communication Node for Mo-Sys-Startracker</description>
 

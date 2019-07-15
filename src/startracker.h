@@ -17,6 +17,10 @@
 #include <tf/tf.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
+#include <tf/transform_datatypes.h>
+
+#include <tf2/transform_datatypes.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -44,7 +48,7 @@ public:
     ~StarTracker();
 
     int init();
-    int run();
+    void run(const ros::TimerEvent& e);
     int shutdown();
 
     ros::Time absTimeStamp_, prevAbsTimeStamp_;
@@ -73,6 +77,7 @@ public:
 
     Data receivedPosition_;
     Pose currentPosition_;
+    Pose oldPosition_;
 
     //UDP-IP Settings
     std::string IP_;
@@ -89,17 +94,19 @@ private:
     ros::NodeHandle nh_;
 
     //ROS Publisher
-    ros::Publisher pubPoseStamped;
+    ros::Publisher m_pubTwist;
 
     //ROS TF
-    tf::TransformBroadcaster absOdomBroad_, relOdomBroad_;
+    tf::TransformBroadcaster m_tfBCMapToWorld;
+
+    //ROS Timer
+    ros::Timer m_timerRun;
+
+    //ROS Poses
+    geometry_msgs::PoseStamped startracker_world_zero;
 
     //ROS msgs
-    nav_msgs::Odometry relOdomMsg_, absOdomMsg_;
-    geometry_msgs::PoseWithCovarianceStamped driftMsg_;
-    geometry_msgs::PoseStamped driftMsgVis_;
-    geometry_msgs::TransformStamped absOdomTrans_, relOdomTrans_;
-    geometry_msgs::Quaternion absOdomQuat_, relOdomQuat_;
+    nav_msgs::Odometry m_msgOdom;
 
     //frames
     std::string absOdomFrame_, relOdomFrame_, absSensorFrame_, relSensorFrame_, driftFrame_;
@@ -111,6 +118,8 @@ private:
     int driftCount_;
     int infoCount_, qrAmount_;
     int prevID_;
+
+    bool m_bWorldTransformAvailable;
 
 };
 
