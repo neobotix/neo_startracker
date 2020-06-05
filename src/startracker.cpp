@@ -8,6 +8,8 @@ StarTracker::StarTracker()
     //ros related values
     poseTopicName_  = nh_.param <std::string>(nameSpace + "/ros_topics/abs_topic", "startracker_pose");
 
+    m_pubPoseStamped = nh_.advertise<geometry_msgs::PoseStamped>("startracker_pose", 1);
+    m_pubPose2d = nh_.advertise<geometry_msgs::Pose2D>("startracker_pose2d", 1);
     m_pubTwist = nh_.advertise<geometry_msgs::Twist>("startracker_twist", 1);
 
     port_ = nh_.param(nameSpace + "/device_configuration/port", 18000);
@@ -15,6 +17,8 @@ StarTracker::StarTracker()
 
     //set up timer to cyclically call run-method
     m_timerRun = nh_.createTimer(ros::Duration(0.02), &StarTracker::run, this);
+
+    m_bInitialized = false;
 
 
 }
@@ -102,26 +106,73 @@ void StarTracker::run(const ros::TimerEvent& e)
             receivedPosition_.roll = getInt32(rcvBuf[21],rcvBuf[22],rcvBuf[23],rcvBuf[24]);
 
             //convert from from 10^5 to 10^3 [mm]
-            currentPosition_.x = round(receivedPosition_.x / 100000.0 * 1000)/1000;
-            currentPosition_.y = round(receivedPosition_.y / 100000.0 * 1000)/1000;
-            currentPosition_.z = round(receivedPosition_.z / 100000.0 * 1000)/1000;
+            currentPosition_.x = round(receivedPosition_.x / 100000.0 * 10000)/10000;
+            currentPosition_.y = round(receivedPosition_.y / 100000.0 * 10000)/10000;
+            currentPosition_.z = round(receivedPosition_.z / 100000.0 * 10000)/10000;
 
             //convert tix to rad
             float r2t = 1e6f / (2.f * M_PI);
 
-            currentPosition_.yaw = round(receivedPosition_.yaw / r2t * 1000) / 1000;
-            currentPosition_.pitch = round(receivedPosition_.pitch / r2t * 1000) / 1000;
-            currentPosition_.roll = round(receivedPosition_.roll / r2t * 1000) / 1000;
+            currentPosition_.yaw = round(receivedPosition_.yaw / r2t * 10000) / 10000;
+            currentPosition_.pitch = round(receivedPosition_.pitch / r2t * 10000) / 10000;
+            currentPosition_.roll = round(receivedPosition_.roll / r2t * 10000) / 10000;
 
-            ROS_INFO("Current Position: %f %f %f Current Angle: %f %f %f", currentPosition_.x, currentPosition_.y, currentPosition_.z, currentPosition_.roll, currentPosition_.pitch, currentPosition_.yaw);
+            ROS_INFO("--------------------------------");
+            ROS_INFO("Star Frame Position: %f %f %f ", currentPosition_.x, currentPosition_.y, currentPosition_.z);
+            ROS_INFO("Star Frame Angle: %f %f %f", currentPosition_.roll*180/3.145, currentPosition_.pitch*180/3.145, currentPosition_.yaw*180/3.145);
 
             
             //convert angles to angle vel
-            float vel_x = (currentPosition_.x - oldPosition_.x) / 0.01;
-            float vel_y = (currentPosition_.y - oldPosition_.y) / 0.01;
-            float vel_alpha = (currentPosition_.yaw - oldPosition_.yaw) / 0.01;
+            float vel_x = (currentPosition_.x - oldPosition_.x) / 0.02;
+            float vel_y = (currentPosition_.y - oldPosition_.y) / 0.02;
+            float vel_alpha = (currentPosition_.yaw - oldPosition_.yaw) / 0.02;
 
-            ROS_INFO("Current Velocities: %f %f %f ", vel_x, vel_y, vel_alpha);
+            //ROS_INFO("Current Velocities: %f %f %f ", vel_x, vel_y, vel_alpha);
+
+            tf2::Quaternion myQuat;
+            geometry_msgs::Quaternion quat_msg;
+
+            if(!m_bInitialized)
+            {
+                //calculate transformation from world to odom
+                //transform world position to robot odom frame
+                
+
+                //base_link_to_leap_motion = tfBuffer.lookupTransform("leap_motion", "base_link", ros::Time(0), ros::Duration(1.0) );
+
+                m_msgTrafoWorldToOdom.header.stamp = ros::Time::now();
+                //base_link_to_leap_motion.header.seq = 
+                m_msgTrafoWorldToOdom.header.frame_id = "world";
+                m_msgTrafoWorldToOdom.child_frame_id = "odom";
+                
+                m_msgTrafoWorldToOdom.transform.translation.x = 1.0;//currentPosition_.x;
+                m_msgTrafoWorldToOdom.transform.translation.y = 1.0;//currentPosition_.y;
+                m_msgTrafoWorldToOdom.transform.translation.z = 0.0;//currentPosition_.z;
+
+                tf2::Quaternion myQuaternion;
+                myQuaternion.setRPY(0,0,-1.57);//currentPosition_.roll,currentPosition_.pitch,currentPosition_.yaw);//currentPosition_.roll, currentPosition_.pitch, currentPosition_.yaw );  // Create this quaternion from roll/pitch/yaw (in radians)
+                //myQuaternion.normalize();
+                //myQuaternion.inverse();
+
+                
+                quat_msg = tf2::toMsg(myQuaternion);
+
+                m_msgTrafoWorldToOdom.transform.rotation.x = quat_msg.x;
+                m_msgTrafoWorldToOdom.transform.rotation.y = quat_msg.y;
+                m_msgTrafoWorldToOdom.transform.rotation.z = quat_msg.z;
+                m_msgTrafoWorldToOdom.transform.rotation.w = quat_msg.w;
+
+                ROS_INFO("quad msg: %f %f %f %f", quat_msg.x, quat_msg.y, quat_msg.z, quat_msg.w);
+
+                /*m_msgTrafoWorldToOdom.transform.rotation.x = myQuaternion.getX;
+                m_msgTrafoWorldToOdom.transform.rotation.y = myQuaternion.getY;
+                m_msgTrafoWorldToOdom.transform.rotation.z = myQuaternion.getZ;
+                m_msgTrafoWorldToOdom.transform.rotation.w = myQuaternion.getW;*/
+
+                //initialization done
+                m_bInitialized = true;
+
+            }
 
             //save old position
             oldPosition_.x = currentPosition_.x;
@@ -131,14 +182,89 @@ void StarTracker::run(const ros::TimerEvent& e)
             oldPosition_.pitch = currentPosition_.pitch;
             oldPosition_.yaw = currentPosition_.yaw;
 
+            //create pose stamped
+            geometry_msgs::PoseStamped msgPoseStamped;
+            msgPoseStamped.header.stamp = ros::Time::now();
+            msgPoseStamped.pose.position.x = currentPosition_.x;
+            msgPoseStamped.pose.position.y = currentPosition_.y;
+            msgPoseStamped.pose.position.z = currentPosition_.z;
+            tf2::Quaternion tmpQuat1;
+            tmpQuat1.setRPY(currentPosition_.roll,currentPosition_.pitch,currentPosition_.yaw);
+            geometry_msgs::Quaternion msgQuat1;
+            msgQuat1 = tf2::toMsg(tmpQuat1);
+            msgPoseStamped.pose.orientation = msgQuat1;
+
+            //pulish pose stamped
+            m_pubPoseStamped.publish(msgPoseStamped);
+
             //create geometry_msgs twist
             geometry_msgs::Twist msgTwist;
             msgTwist.linear.x = vel_x;
             msgTwist.linear.y = vel_y;
             msgTwist.angular.z = vel_alpha;
-
+            
+            //publish geometry_msgs twist
             m_pubTwist.publish(msgTwist);
 
+            //create geometry_msgs Pose2D
+            geometry_msgs::Pose2D msgPose2d;
+            msgPose2d.x = currentPosition_.x;
+            msgPose2d.y = currentPosition_.y;
+            msgPose2d.theta = currentPosition_.yaw;
+            
+            //publish geometry_msgs Pose2D
+            m_pubPose2d.publish(msgPose2d);
+
+
+            /*geometry_msgs::PoseStamped pose;
+            pose.pose.position.x = 1.0;//currentPosition_.x;
+            pose.pose.position.y = 1.0;//currentPosition_.y;
+            pose.pose.position.z = 0.0;//currentPosition_.z;
+
+            //tf2::Quaternion myQuaternion;
+            myQuat.setRPY(0,0,0);//currentPosition_.roll,currentPosition_.pitch,currentPosition_.yaw);//currentPosition_.roll, currentPosition_.pitch, currentPosition_.yaw );  // Create this quaternion from roll/pitch/yaw (in radians)
+            //myQuaternion.normalize();
+
+            geometry_msgs::Quaternion quat_msg2;
+            quat_msg2 = tf2::toMsg(myQuat);
+
+            pose.pose.orientation.x = quat_msg2.x;
+            pose.pose.orientation.y = quat_msg2.y;
+            pose.pose.orientation.z = quat_msg2.z;
+            pose.pose.orientation.w = quat_msg2.w;
+
+            tf2Scalar yaw1, pitch1, roll1;
+            tf2::Matrix3x3 mat1(myQuat);
+            mat1.getEulerYPR(yaw1, pitch1, roll1);
+
+            ROS_INFO("Pose in Star Frame: %f %f %f ", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z);
+            ROS_INFO("Angles in Star Frame: %f %f %f", roll1*180/3.145, pitch1*180/3.145, yaw1*180/3.145);
+
+
+            tf2::doTransform(pose, pose, m_msgTrafoWorldToOdom); // robotPose is the PoseStamped I want to transform
+            
+
+            tf2::Quaternion myQuat3;
+            myQuat3.setX(pose.pose.orientation.x);
+            myQuat3.setY(pose.pose.orientation.y);
+            myQuat3.setZ(pose.pose.orientation.z);
+            myQuat3.setW(pose.pose.orientation.w);
+
+            tf2Scalar yaw, pitch, roll;
+            tf2::Matrix3x3 mat(myQuat3);
+            mat.getEulerYPR(yaw, pitch, roll);
+
+            ROS_INFO("Pose in Odom Frame: %f %f %f ", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z);
+            ROS_INFO("Angles in Odom Frame: %f %f %f", roll*180/3.145, pitch*180/3.145, yaw*180/3.145);
+
+
+            //create odometry msg 
+            nav_msgs::Odometry msgWorldOdom;
+            msgWorldOdom.pose.pose.position.x = pose.pose.position.x;
+            msgWorldOdom.pose.pose.position.y = pose.pose.position.y;
+            msgWorldOdom.pose.pose.position.z = pose.pose.position.z;*/
+
+            
 
 
         }

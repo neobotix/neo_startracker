@@ -11,6 +11,7 @@
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <geometry_msgs/Pose2D.h>
 #include <std_msgs/String.h>
 #include <std_msgs/UInt8MultiArray.h>
 #include <nav_msgs/Odometry.h>
@@ -19,6 +20,10 @@
 #include <tf/transform_listener.h>
 #include <tf/transform_datatypes.h>
 
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Scalar.h>
+#include <tf2/convert.h>
+#include <tf2/utils.h>
 #include <tf2/transform_datatypes.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 
@@ -94,10 +99,13 @@ private:
     ros::NodeHandle nh_;
 
     //ROS Publisher
+    ros::Publisher m_pubPoseStamped;
+    ros::Publisher m_pubPose2d;
     ros::Publisher m_pubTwist;
 
     //ROS TF
-    tf::TransformBroadcaster m_tfBCMapToWorld;
+    tf2_ros::TransformBroadcaster m_tfBCMapToWorld;
+    geometry_msgs::TransformStamped m_msgTrafoWorldToOdom; // My frames are named "base_link" and "leap_motion"
 
     //ROS Timer
     ros::Timer m_timerRun;
@@ -112,6 +120,11 @@ private:
     std::string absOdomFrame_, relOdomFrame_, absSensorFrame_, relSensorFrame_, driftFrame_;
     //topic names
     std::string poseTopicName_;
+
+    
+    
+
+    bool m_bInitialized;
 
     int relOdomOn_, absOdomOn_, driftOn_, driftVisOn_, diagnosticsOn_, infosOn_;
     int recvBytes_, sendBytes_;
